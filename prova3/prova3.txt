@@ -1,0 +1,241 @@
+GABRIEL NERY DA SILVA ESPINDOLA
+202200509
+
+# =================
+# QUESTÃO 1
+# =================
+
+O fato de certos endereços de instruções serem relativos significa que para conseguir o 
+endereço absoluto desse simbolo é necessário saber tanto o endereço de PC quanto
+quanto do deslocamento do simbolo. Essa abordagem afeta as chamadas de funções, pois 
+toda vez que um simbolo com endereço relativo é usado, será preciso fazer o calculo 
+de seu endereço absoluto
+
+# =================
+# QUESTÃO 2
+# =================
+.section .rodata
+
+.data
+	.globl values
+	.align 8
+	values: .double 10.0, 20.0, 30.0, 40.0, 50.0
+
+.text
+
+# ============
+# PARAMETROS
+# ============
+# float *consts -> %rdi
+# short min -> %si
+# double bias -> %xmm0
+# ============
+.globl support
+support: 
+	pushq %rbp
+	movq %rsp, %rbp
+	
+	# double sum -> xmm1	
+	
+	movl $0, %ecx # int i = 0
+	for:	
+		cmpl $5, %ecx
+		jge end_for
+			
+		if:	
+			# ============
+			# (double) mix
+			# ============
+			movswl %si, %r8d # (int) mix
+			cvtsi2sd %r8d, %xmm10 # (double) mix -> xmm10 
+			# ============
+			
+			# ============
+			# (double) *consts
+			# ============
+			cvtss2sd (%rdi), %xmm11 # (double) *consts -> xmm11
+			# ============
+			
+			addsd %xmm10, %xmm11 # mix + *consts
+			
+			ucomisd %xmm0, %xmm11
+			jbe else
+				# ====================================
+				# emulator((float) bias, (long)mix)
+				# ====================================
+				movq %rdi, -8(%rbp) # salvo float *consts
+				movq %rsi, -16(%rbp) # salvo short min
+				movsd %xmm0, -24(%rbp) # salvo double bias
+				movsd %xmm1, -32(%rbp) # salvo double sum
+				movq %rcx, -40(%rbp)  # salvo i
+				
+				cvtsd2ss %xmm0, %xmm10 # (float)bias -> xmm10 
+				movsd %xmm10, %xmm0 # 1o param
+				
+				movswq  %si, %rdi # 2o param
+				
+				call emulator
+				
+				movsd %xmm0, %xmm10 # savlo retorno de emulator				
+								
+				movq -8(%rbp), %rdi # recupero float *consts
+				movq -16(%rbp), %rsi # recupero short min
+				movsd -24(%rbp), %xmm0 # recupero double bias
+				movsd -32(%rbp), %xmm1 # recupero double sum
+				movq -40(%rbp), %rcx # recupero i
+				
+				movsd %xmm10, %xmm0 # bias = emulator((float) bias, (long)mix)
+				
+				# ====================================
+			
+			jmp end_if
+		else:
+		
+			# values[i]
+			movq $values, %r8 # &values
+			movslq %ecx, %r9 # (long) i
+			imulq $8, %r9 # i * sizeof(double)
+			addq %r8, %r9 # &values[i] 
+		
+			# (double) *consts
+			cvtss2sd (%rdi), %xmm10 
+			
+			mulsd (%r9), %xmm10 # values[i] *  (*consts) -> xmm10
+			addsd %xmm0, %xmm10 # values[i] *  (*consts) + bias
+			
+			movsd %xmm10, %xmm1 # sum = values[i] *  (*consts) + bias
+			
+		end_if:
+		
+		incl %ecx # i++
+		addq $4, %rdi # consts++
+		jmp for
+	end_for:
+	
+	cvtsd2ss %xmm1, %xmm0 # return (float) sum
+	
+	leave
+	ret
+	
+# =================
+# QUESTÃO 3
+# =================
+.section. rodata
+
+	fmt: .string "min = %d, value = %f\n"
+	
+	.globl fp
+	.align 8
+	fp: .double 50.0
+	
+.data
+	.globl p
+	.align 8
+	p: 
+		.word 100
+		.int 20
+		.quad 0
+.text
+
+# ============
+# PARAMETROS
+# ============
+# struct Points *ptr -> %rdi
+# double limit -> %xmm0
+# ============
+.globl calc
+calc:
+	pushq %rbp
+	movq %rsp, %rbp
+	
+	# struct Points pLocal ->  -16(%rbp)
+	# double values[3] -> -40(%rbp)
+	
+	# =================================
+	# example(50.0, values, &pLocal)
+	# =================================
+	movq %rdi, -48(%rbp) # salvo ptr
+	movsd %xmm0, -56(%rbp) # salvo limit
+	
+	
+	movsd fp, %xmm0 # 1o param
+	leaq -40(%rbp), %rdi # 2o param
+	leaq -16(%rbp), %rsi  # 3o param
+	
+	call example
+	
+	movq -48(%rbp), %rdi # recupero ptr
+	movsd -56(%rbp), %xmm0 # recupero limit
+	# =================================
+	
+	movl $0, %ecx # int i = 0
+	for:
+		# ===============
+		# ptr->parts[i]
+		# ===============
+		leaq 8(%rdi), %r8 # &ptr->parts
+		movslq %ecx, %r9 # (long) i
+		imulq $4, %r9 # i * sizeof(int)
+		addq %r8, %r9 # # &ptr->parts[i]
+		
+		movl (%r9), %r10d # ptr->parts[i] -> r10d
+		# ===============
+		
+		# ===============
+		# pLocal.min
+		# ===============
+		leaq -16(%rbp), %r8 # &pLocal
+		movl 4(%r8), %r11d #  pLocal.min -> r11d
+		# ===============
+	
+		cmpl %r11d, %r10d
+		jle end_for
+	
+		if:
+			# ===============
+			# values[i]
+			# ===============
+			
+			leaq -40(%rbp), %r8 # &values
+			movslq %ecx, %r9 # (long) i
+			imulq $8, %r9 # i * sizeof(double)
+			addq %r8, %r9 # &values[i]
+			
+			# ===============
+			
+			ucomisd %xmm0, (%r9)
+			jbe end_if
+			
+			# ===========
+			# printf
+			# ===========
+			movq %rdi, -48(%rbp) # salvo ptr
+			movsd %xmm0, -56(%rbp) # salvo limit
+			movq %rcx, -64(%rbp) # salvo i
+			
+			movq $fmt, %rdi # 1o param
+			
+			movq $p, %r8 # &p
+			movl 4(%r8), %esi # 2o param
+			
+			cvtsd2ss (%r9), %xmm0 # 3o parametro -> (float) values[i]
+			
+			call printf
+			
+			movq -48(%rbp), %rdi # recupero ptr
+			movsd -56(%rbp), %xmm0 # recupero limit
+			movq -64(%rbp), %rcx # recupero i
+			# ===========
+		
+		end_if:
+	
+		addq $16, %rdi # ptr++
+	
+		incl %ecx # i++
+		jmp for
+	end_for:
+	
+	leave
+	ret
+	
+
